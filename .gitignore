@@ -1,5 +1,9 @@
 /.vscode
 /build
 /media
-/archive
-
+/db
+/external
+/models
+/__pycache__
+*.pt
+/runs
