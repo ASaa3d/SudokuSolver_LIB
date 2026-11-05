@@ -2,6 +2,7 @@
 #define HELPERS_H
 #include <vector>
 #include <opencv2/geometry/2d.hpp>
+// #include <opencv2/imgproc.hpp>
 #include <opencv2/opencv.hpp>
 #include <onnxruntime_cxx_api.h>
 #include "onnx_session.h"
@@ -225,7 +226,6 @@ bool get_grid_opencv(cv::Mat* input_image , cv::Mat &warped_image)
     for (size_t i=1;i<contours.size();i++)
     {
         candidateArea = cv::contourArea(contours[i]);
-        // TODO: fix warping
         if (candidateArea < imageArea * 0.1 || candidateArea > imageArea * 0.9) continue;
         perimeter = cv::arcLength(contours[i],true);
         cv::approxPolyDP(contours[i],approx,0.04*perimeter,true);
