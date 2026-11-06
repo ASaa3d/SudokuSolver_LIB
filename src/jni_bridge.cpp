@@ -4,18 +4,32 @@
 // function names below if yours is different).
 
 #include <jni.h>
+
+#ifdef __ANDROID__
 #include <android/bitmap.h>
 #include <android/log.h>
+#else
+#include <cstdio>
+#endif
 
 #include <string>
 #include <vector>
 
+// Defined by CMake when the OpenCV build has the imgcodecs module
+// (the minimal opencv-mobile package does not).
+#ifdef MIN_SUD_HAVE_IMGCODECS
+#include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
+#endif
 
 #include "sudoku_pipeline.h"
 
 #define LOG_TAG "min_sud"
+#ifdef __ANDROID__
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+#else
+#define LOGE(...) (std::fprintf(stderr, "[" LOG_TAG "] " __VA_ARGS__), std::fputc('\n', stderr))
+#endif
 
 namespace {
 
@@ -82,7 +96,7 @@ extern "C" {
 // ---- lifecycle -------------------------------------------------------------
 
 JNIEXPORT jlong JNICALL
-Java_com_example_sudokusolver_MinSud_nativeCreate(JNIEnv* env, jobject /*thiz*/,
+Java_com_example_SudokuSolver_MinSud_nativeCreate(JNIEnv* env, jobject /*thiz*/,
                                            jstring digit_model_path,
                                            jstring yolo_model_path) {
     const char* digit = env->GetStringUTFChars(digit_model_path, nullptr);
@@ -100,15 +114,16 @@ Java_com_example_sudokusolver_MinSud_nativeCreate(JNIEnv* env, jobject /*thiz*/,
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_sudokusolver_MinSud_nativeDestroy(JNIEnv* /*env*/, jobject /*thiz*/,
+Java_com_example_SudokuSolver_MinSud_nativeDestroy(JNIEnv* /*env*/, jobject /*thiz*/,
                                             jlong handle) {
     min_sud_destroy(reinterpret_cast<MinSudPipeline*>(handle));
 }
 
 // ---- input: Android Bitmap (ARGB_8888 / RGBA in memory) --------------------
-
+// Android only; the Linux/Spring Boot class has no bitmap method.
+#ifdef __ANDROID__
 JNIEXPORT jobjectArray JNICALL
-Java_com_example_sudokusolver_MinSud_nativeProcessBitmap(JNIEnv* env, jobject /*thiz*/,
+Java_com_example_SudokuSolver_MinSud_nativeProcessBitmap(JNIEnv* env, jobject /*thiz*/,
                                                   jlong handle, jobject bitmap) {
     AndroidBitmapInfo info;
     if (AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS) {
@@ -137,6 +152,7 @@ Java_com_example_sudokusolver_MinSud_nativeProcessBitmap(JNIEnv* env, jobject /*
     AndroidBitmap_unlockPixels(env, bitmap);
     return result;
 }
+#endif  // __ANDROID__
 
 // ---- input: raw byte array -------------------------------------------------
 // pixel_format uses the MinSudPixelFormat values:
@@ -144,7 +160,7 @@ Java_com_example_sudokusolver_MinSud_nativeProcessBitmap(JNIEnv* env, jobject /*
 // row_stride = bytes per row (pass 0 for tightly packed).
 
 JNIEXPORT jobjectArray JNICALL
-Java_com_example_sudokusolver_MinSud_nativeProcessBytes(JNIEnv* env, jobject /*thiz*/,
+Java_com_example_SudokuSolver_MinSud_nativeProcessBytes(JNIEnv* env, jobject /*thiz*/,
                                                  jlong handle, jbyteArray data,
                                                  jint width, jint height,
                                                  jint pixel_format, jint row_stride) {
@@ -184,8 +200,9 @@ Java_com_example_sudokusolver_MinSud_nativeProcessBytes(JNIEnv* env, jobject /*t
 // ---- input: image file path ------------------------------------------------
 
 JNIEXPORT jobjectArray JNICALL
-Java_com_example_sudokusolver_MinSud_nativeProcessFile(JNIEnv* env, jobject /*thiz*/,
+Java_com_example_SudokuSolver_MinSud_nativeProcessFile(JNIEnv* env, jobject /*thiz*/,
                                                 jlong handle, jstring image_path) {
+#ifdef MIN_SUD_HAVE_IMGCODECS
     const char* path = env->GetStringUTFChars(image_path, nullptr);
     cv::Mat bgr = cv::imread(path, cv::IMREAD_COLOR);  // honours EXIF rotation
     env->ReleaseStringUTFChars(image_path, path);
@@ -196,6 +213,13 @@ Java_com_example_sudokusolver_MinSud_nativeProcessFile(JNIEnv* env, jobject /*th
     }
     return run_pipeline(env, handle, bgr.data, bgr.cols, bgr.rows,
                         MIN_SUD_PIXEL_BGR8, bgr.step);
+#else
+    (void)handle;
+    (void)image_path;
+    throw_java(env, "java/lang/UnsupportedOperationException",
+               "this build has no OpenCV imgcodecs: decode the image in Java and use the byte[] method");
+    return nullptr;
+#endif
 }
 
 }  // extern "C"

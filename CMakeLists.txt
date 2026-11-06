@@ -64,17 +64,27 @@ option(MIN_SUD_BUILD_CLI
     ON
 )
 
+# CHANGE 1: new option. When ON, src/jni_bridge.cpp is compiled into libmin_sud_core.so
+# so the JVM (Spring Boot) can find Java_com_example_SudokuSolver_MinSud_* (needs JAVA_HOME).
+option(MIN_SUD_BUILD_JNI
+    "Compile src/jni_bridge.cpp into the Linux library for Java / Spring Boot"
+    OFF
+)
+
 # --------------------------------------------------
 # Dependencies
 # --------------------------------------------------
 
 find_package(OpenCV REQUIRED COMPONENTS core imgproc OPTIONAL_COMPONENTS imgcodecs)
 
-if(NOT TARGET opencv_imgcodecs AND NOT "imgcodecs" IN_LIST OpenCV_LIB_COMPONENTS)
-    message(WARNING
-        "OpenCV imgcodecs not available in this build (opencv-mobile is minimal): "
-        "cv::imread/imdecode/imencode will not link."
-    )
+# CHANGE 2: instead of only warning, remember whether imgcodecs exists. The JNI bridge
+# uses this to enable/disable cv::imread (file-path input).
+if(TARGET opencv_imgcodecs OR "imgcodecs" IN_LIST OpenCV_LIB_COMPONENTS)
+    set(MIN_SUD_HAVE_IMGCODECS ON)
+else()
+    set(MIN_SUD_HAVE_IMGCODECS OFF)
+    message(STATUS "OpenCV imgcodecs not available (minimal opencv-mobile): "
+                   "file-path input is disabled, use the byte[] input.")
 endif()
 
 find_library(ONNX_RUNTIME_LIB
@@ -112,6 +122,13 @@ else()
 
     set(PIPELINE_TARGET min_sud_core)
 
+    # CHANGE 3: compile the JNI bridge into the Linux library.
+    if(MIN_SUD_BUILD_JNI)
+        find_package(JNI REQUIRED)
+        target_sources(min_sud_core PRIVATE src/jni_bridge.cpp)
+        target_include_directories(min_sud_core PRIVATE ${JNI_INCLUDE_DIRS})
+    endif()
+
     # Optional Linux CLI
     if(MIN_SUD_BUILD_CLI)
         add_executable(${PROJECT_NAME}
@@ -141,6 +158,11 @@ target_compile_features(${PIPELINE_TARGET}
     PUBLIC cxx_std_17
 )
 
+# CHANGE 4: tell jni_bridge.cpp whether cv::imread is available.
+if(MIN_SUD_HAVE_IMGCODECS)
+    target_compile_definitions(${PIPELINE_TARGET} PRIVATE MIN_SUD_HAVE_IMGCODECS)
+endif()
+
 # --------------------------------------------------
 # Linking
 # --------------------------------------------------
@@ -167,15 +189,18 @@ endif()
 
 if(NOT ANDROID)
 
+    # CHANGE 5: add $ORIGIN to BUILD_RPATH too. The .so you copy into dist/ (and into the
+    # Spring Boot resources) is the build-tree file, so it needs to find libonnxruntime.so
+    # next to itself, not only in your /mnt/data/... folder.
     set_target_properties(${PIPELINE_TARGET} PROPERTIES
         POSITION_INDEPENDENT_CODE ON
-        BUILD_RPATH "${ONNX_RUNTIME_DIR}/lib"
+        BUILD_RPATH "$ORIGIN;${ONNX_RUNTIME_DIR}/lib"
         INSTALL_RPATH "$ORIGIN"
     )
 
     if(MIN_SUD_BUILD_CLI)
         set_target_properties(${PROJECT_NAME} PROPERTIES
-            BUILD_RPATH "${ONNX_RUNTIME_DIR}/lib"
+            BUILD_RPATH "$ORIGIN;${ONNX_RUNTIME_DIR}/lib"
             INSTALL_RPATH "$ORIGIN"
         )
     endif()
@@ -192,9 +217,11 @@ message(STATUS "Platform:         ${ANDROID}")
 message(STATUS "OpenCV version:   ${OpenCV_VERSION}")
 message(STATUS "OpenCV directory: ${OpenCV_DIR}")
 message(STATUS "ONNX Runtime:     ${ONNX_RUNTIME_LIB}")
+message(STATUS "imgcodecs:        ${MIN_SUD_HAVE_IMGCODECS}")
 
 if(NOT ANDROID)
     message(STATUS "Build CLI:        ${MIN_SUD_BUILD_CLI}")
+    message(STATUS "Build JNI:        ${MIN_SUD_BUILD_JNI}")
 endif()
 
 message(STATUS "----------------------------------------")
