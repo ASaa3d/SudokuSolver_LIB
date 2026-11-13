@@ -8,9 +8,9 @@ A C++/OpenCV/ONNX Runtime pipeline that detects a Sudoku grid in an image, extra
 
 ### End-to-end Sudoku recognition demo
 
-Video coming soon.
+https://github.com/user-attachments/assets/aa1282c7-8ece-4dba-9d6d-c98fcb4c32e2
 
-<!-- Add the demo video link or embed here after uploading it. -->
+
 
 ## Pipeline
 
